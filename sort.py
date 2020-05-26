@@ -38,7 +38,8 @@ except:
 
 np.random.seed(0)
 
-
+# When for a given bbox, you have multiple bboxes with IOU > threshold
+# We need to optimize to choose one with minimum loss
 def linear_assignment(cost_matrix):
   try:
     import lap
@@ -66,6 +67,7 @@ def iou(bb_test, bb_gt):
     + (bb_gt[2] - bb_gt[0]) * (bb_gt[3] - bb_gt[1]) - wh)
   return(o)
 
+# below two functions convert bbox in to alternative format
 
 def convert_bbox_to_z(bbox):
   """
@@ -94,7 +96,9 @@ def convert_x_to_bbox(x,score=None):
   else:
     return np.array([x[0]-w/2.,x[1]-h/2.,x[0]+w/2.,x[1]+h/2.,score]).reshape((1,5))
 
-
+# Monitors velocity of the bboxes
+# predicts next position of the bbox based on history
+# updates position based on GT value (and ppossibly KF params accordingly - need to verify)
 class KalmanBoxTracker(object):
   """
   This class represents the internal state of individual tracked objects observed as bbox.
@@ -154,13 +158,20 @@ class KalmanBoxTracker(object):
     """
     return convert_x_to_bbox(self.kf.x)
 
+# summary: we get detections, previous trackers and try to idenitify new dets to prev trackers
+# returns: matched [<det_id, track_id>], [<unmatched_detections>], [<unmatched_trackers>]
 
+# how ?? : (1) calculate pairwise IOU 
+# (2) find matched indices (directly if single iou match or using optimization if multiple trackers satisfy iou threshold for given det
+# (3) add unmatched detections and trackers
+# (4) filter matches with low iou (happens with linear assignment case as entire IOU matrix is passed to it
 def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.3):
   """
   Assigns detections to tracked object (both represented as bounding boxes)
 
   Returns 3 lists of matches, unmatched_detections and unmatched_trackers
   """
+  # (1) calculate pairwise IOU 
   if(len(trackers)==0):
     return np.empty((0,2),dtype=int), np.arange(len(detections)), np.empty((0,5),dtype=int)
   iou_matrix = np.zeros((len(detections),len(trackers)),dtype=np.float32)
@@ -168,7 +179,8 @@ def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.3):
   for d,det in enumerate(detections):
     for t,trk in enumerate(trackers):
       iou_matrix[d,t] = iou(det,trk)
-
+    
+  # (2) find matched indices (directly if single iou match or using optimization if multiple trackers satisfy iou threshold for given det
   if min(iou_matrix.shape) > 0:
     a = (iou_matrix > iou_threshold).astype(np.int32)
     if a.sum(1).max() == 1 and a.sum(0).max() == 1:
@@ -177,7 +189,8 @@ def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.3):
       matched_indices = linear_assignment(-iou_matrix)
   else:
     matched_indices = np.empty(shape=(0,2))
-
+    
+  # (3) add unmatched detections and trackers
   unmatched_detections = []
   for d, det in enumerate(detections):
     if(d not in matched_indices[:,0]):
@@ -188,6 +201,7 @@ def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.3):
       unmatched_trackers.append(t)
 
   #filter out matched with low IOU
+  # (4) filter matches with low iou (happens with linear assignment case as entire IOU matrix is passed to it
   matches = []
   for m in matched_indices:
     if(iou_matrix[m[0], m[1]]<iou_threshold):
@@ -213,6 +227,10 @@ class Sort(object):
     self.trackers = []
     self.frame_count = 0
 
+  # (1) predict next location of all trackers and identify ones going out of the frame (NaN) and remove/pop them
+  # (2) find matches, unmatches for new frame and update locs of trackers using GT
+  # (3) create and initialise new trackers for unmatched detections
+  # (4) Remove trackers based on params for (1) trackers - time_since_update, hit_streak (2) sort - max_age, min_hits, frame_count
   def update(self, dets=np.empty((0, 5))):
     """
     Params:
@@ -246,6 +264,8 @@ class Sort(object):
         trk = KalmanBoxTracker(dets[i,:])
         self.trackers.append(trk)
     i = len(self.trackers)
+    
+    # Remove trackers based on params for (1) trackers - time_since_update, hit_streak (2) sort - max_age, min_hits, frame_count
     for trk in reversed(self.trackers):
         d = trk.get_state()[0]
         if (trk.time_since_update < 1) and (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits):
@@ -267,6 +287,8 @@ def parse_args():
     args = parser.parse_args()
     return args
 
+
+# get your files structure to follow this patterns = os.path.join(args.seq_path, args.phase, '*', 'det', 'det.txt')
 if __name__ == '__main__':
   # all train
   args = parse_args()
@@ -285,6 +307,7 @@ if __name__ == '__main__':
 
   if not os.path.exists('output'):
     os.makedirs('output')
+  # you need your files to follow this patterns
   pattern = os.path.join(args.seq_path, phase, '*', 'det', 'det.txt')
   for seq_dets_fn in glob.glob(pattern):
     mot_tracker = Sort() #create instance of the SORT tracker
