@@ -20,10 +20,11 @@ from __future__ import print_function
 import os
 import numpy as np
 import matplotlib
-matplotlib.use('TkAgg')
+import cv2
+#matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from skimage import io
+#from skimage import io
 
 import glob
 import time
@@ -312,6 +313,7 @@ if __name__ == '__main__':
   for seq_dets_fn in glob.glob(pattern):
     mot_tracker = Sort() #create instance of the SORT tracker
     seq_dets = np.loadtxt(seq_dets_fn, delimiter=',')
+    # seq just finds the folder * placeholder
     seq = seq_dets_fn[pattern.find('*'):].split('/')[0]
     
     with open('output/%s.txt'%(seq),'w') as out_file:
@@ -324,7 +326,7 @@ if __name__ == '__main__':
 
         if(display):
           fn = 'mot_benchmark/%s/%s/img1/%06d.jpg'%(phase, seq, frame)
-          im =io.imread(fn)
+          im =cv2.imread(fn)
           ax1.imshow(im)
           plt.title(seq + ' Tracked Targets')
 
