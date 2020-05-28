@@ -121,13 +121,19 @@ class KalmanBoxTracker(object):
     self.kf.Q[4:,4:] *= 0.01
 
     self.kf.x[:4] = convert_bbox_to_z(bbox)
-    self.time_since_update = 0
+    self.time_since_update = 0 # Tracks when was the last time it was updated
+    # predict is called all the time, but update is called only when match is found b/w detections and trackers
     self.id = KalmanBoxTracker.count
     KalmanBoxTracker.count += 1
     self.history = []
     self.hits = 0
-    self.hit_streak = 0
+    self.hit_streak = 0 # Kind of opposite (not literally) to time since update
+    # it measures streak of consistant number of update calls without break
     self.age = 0
+    
+    # basically hit_streak focuses consistency of the object to be in the frame and
+    # time_since_update focuses on how long the tracked object went out of the frame
+    # they are used to discard untracked objects
 
   def update(self,bbox):
     """
